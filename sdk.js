@@ -161,72 +161,6 @@ VK.prototype.waitForNextRequest = function (_cb) {
 };
 
 /**
- * =========================== Dealing with api
- */
-/**
- * Request API method with signature
- * @param {string} _method
- * @param {mixed} _params
- * @param {mixed} _response
- * @returns {mixed}
- *
- * @see https://vk.com/pages?oid=-17680044&p=Application_Interaction_with_API
- */
-VK.prototype.oldRequest = function(_method, _requestParams, _response) {
-    var responseType = 'event';
-
-    if ( typeof(_response) === 'function') {
-        responseType = 'callback';
-    }
-
-    var params             = (!!_requestParams ? _requestParams : {});
-    params.api_id          = this.options.appId;
-    params.v               = '3.0';
-    params.lang            = ('lang' in params) ? params['lang'] :  this.options.language ||  this.default.language;
-    params.method          = _method;
-    params.timestamp        = Math.round(new Date().getTime() / 1000);
-    params.format          = 'json';
-    params.random          = Math.floor(Math.random() * 9999);
-
-    // JS doesn't guarantee the sequence of parameters in the object. It can break.
-    params  = this.sortObjectByKey(params);
-    params.sig             = this._createSig(params);
-
-    var requestString = this.buildQuery(params);
-
-    var options = {
-        host: 'api.vk.com',
-        port: 80,
-        path: '/api.php?' + requestString
-    };
-
-    var self = this;
-
-    http.get(options, function(res) {
-        var apiResponse = new String();
-        res.setEncoding('utf8');
-
-        res.on('data', function(chunk) {
-            apiResponse += chunk;
-        });
-
-        res.on('end', function() {
-            var o = JSON.parse(apiResponse);
-            if (responseType === 'callback' && typeof _response === 'function') {
-                _response(o);
-            } else {
-                if (responseType === 'event' && !!_response) {
-                    return self.emit(_response, o);
-                }
-                return self.emit('done:' + _method, o);
-            }
-        });
-    }).on('error', function (e) {
-        self.emit('http-error', e);
-    });
-};
-
-/**
  * Request API method
  * @param {string} _method
  * @param {mixed} _params
@@ -236,86 +170,81 @@ VK.prototype.oldRequest = function(_method, _requestParams, _response) {
  * @see https://vk.com/pages?oid=-17680044&p=Application_Interaction_with_API
  */
 VK.prototype.request = function(_method, _requestParams, _response) {
-    var responseType = 'event';
-
-    if ( typeof(_response) === 'function') {
-        responseType = 'callback';
-    }
-
-    var self = this;
-
-    var params = {
-        'lang'  : this.options.lang,
-        'v'     : this.options.version,
-        'https' : (this.options.https) ? 1 : 0
-    };
-
-    if (this.isEmpty(_requestParams) === false) {
-        for (var i in _requestParams) {
-            params[i] = _requestParams[i];
-        }
-    }
-
-    var requestString = this.buildQuery(params);
-
-    if (this.options.secure) {
-        if (this.token) {
-            requestString = requestString + '&access_token=' + this.token;
-        }
-
-        if (this.options.appSecret) {
-            requestString = requestString + '&client_secret=' + this.options.appSecret;
-        }
-    }
-
-    var options = {
-        host: 'api.vk.com',
-        port: 443,
-        path: '/method/' + _method ,
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': requestString.length
-        }
-    };
-
-    this.waitForNextRequest(function () {
-        self.requestingNow = true;
-        var post_req = https.request(options, function(res) {
-            var apiResponse = "";
-            res.setEncoding('utf8');
-
-            res.on('data', function(chunk) {
-                apiResponse += chunk;
-            });
-
-            res.on('end', function() {
-              self.reqLastTime = new Date();
-              self.requestingNow = false;
-              try {
-                var o = JSON.parse(apiResponse);
-              } catch(e) {
-                  return self.emit('parse-error', apiResponse);
-              }
-
-              if (responseType === 'callback' && typeof _response === 'function') {
-                  _response(o);
-              } else {
-                  if (responseType === 'event' && !!_response) {
-                      return self.emit(_response, o);
-                  }
-                  return self.emit('done:' + _method, o);
-              }
-            });
-        }).on('error', function (e) {
-            self.requestingNow = false;
-            self.emit('http-error', e);
-        });
-
-        post_req.write(requestString);
-        post_req.end();
-    })
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    return request.call(self, resolve, reject, _method, _requestParams, _response);
+  });
 };
+
+function request(resolve, reject, _method, _requestParams) {
+
+  var self = this;
+
+  var params = {
+      'lang'  : this.options.lang,
+      'v'     : this.options.version,
+      'https' : (this.options.https) ? 1 : 0
+  };
+
+  if (this.isEmpty(_requestParams) === false) {
+      for (var i in _requestParams) {
+          params[i] = _requestParams[i];
+      }
+  }
+
+  var requestString = this.buildQuery(params);
+
+  if (this.options.secure) {
+      if (this.token) {
+          requestString = requestString + '&access_token=' + this.token;
+      }
+
+      if (this.options.appSecret) {
+          requestString = requestString + '&client_secret=' + this.options.appSecret;
+      }
+  }
+
+  var options = {
+      host: 'api.vk.com',
+      port: 443,
+      path: '/method/' + _method ,
+      method: 'POST',
+      headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': requestString.length
+      }
+  };
+
+  this.waitForNextRequest(function () {
+      self.requestingNow = true;
+      var post_req = https.request(options, function(res) {
+          var apiResponse = "";
+          res.setEncoding('utf8');
+
+          res.on('data', function(chunk) {
+              apiResponse += chunk;
+          });
+
+          res.on('end', function() {
+            self.reqLastTime = new Date();
+            self.requestingNow = false;
+            try {
+              var o = JSON.parse(apiResponse);
+            } catch(e) {
+                reject('parse-error:' + apiResponse);
+            }
+
+            resolve(o);
+          });
+      }).on('error', function (e) {
+          self.requestingNow = false;
+          reject('http-error:' + e);
+      });
+
+      post_req.write(requestString);
+      post_req.end();
+  })
+}
 
 /**
  * Request server token
@@ -325,53 +254,49 @@ VK.prototype.request = function(_method, _requestParams, _response) {
  * @param {String} [_redirect_uri] - URL where code has been received
  *
  */
-VK.prototype.requestServerToken = function(_response, _code, _redirect_uri) {
-    var responseType = 'event';
-
-    if ( typeof(_response) === 'function') {
-        responseType = 'callback';
-    }
-
-    var path = '/access_token?client_id=' + this.options.appId +
-            '&client_secret=' + this.options.appSecret;
-
-    if (typeof _code !== 'undefined' && typeof _redirect_uri !== 'undefined') {
-        path += '&redirect_uri=' + _redirect_uri + '&code=' + _code;
-    } else {
-        path += '&v=' + this.options.version + '&grant_type=client_credentials';
-    }
-
-    var options = {
-        host: 'oauth.vk.com',
-        port: 443,
-        path: path
-    };
-
-    var self  = this;
-
-    https.get(options, function(res) {
-        var apiResponse = new String();
-        res.setEncoding('utf8');
-
-        res.on('data', function(chunk) {
-            apiResponse += chunk;
-        });
-
-        res.on('end', function() {
-            var o = JSON.parse(apiResponse);
-            if (responseType === 'callback' && typeof _response === 'function') {
-                _response(o);
-            } else {
-                if (responseType === 'event' && !!_response) {
-                    return self.emit(_response, o);
-                }
-                return self.emit('serverTokenReady', o);
-            }
-        });
-    }).on('error', function (e) {
-        self.emit('http-error', e);
-    });
+VK.prototype.requestServerToken = function(_code, _redirect_uri) {
+    var self = this;
+    return (new Promise(function(resolve, reject) {
+      requestServerToken.call(self, resolve, _code, _redirect_uri);
+    }));
 };
+
+function requestServerToken(resolve, reject, _code, _redirect_uri) {
+
+  var path = '/access_token?client_id=' + this.options.appId +
+          '&client_secret=' + this.options.appSecret;
+
+  if (typeof _code !== 'undefined' && typeof _redirect_uri !== 'undefined') {
+      path += '&redirect_uri=' + _redirect_uri + '&code=' + _code;
+  } else {
+      path += '&v=' + this.options.version + '&grant_type=client_credentials';
+  }
+
+  var options = {
+      host: 'oauth.vk.com',
+      port: 443,
+      path: path
+  };
+
+  var self  = this;
+
+  https.get(options, function(res) {
+      var apiResponse = new String();
+      res.setEncoding('utf8');
+
+      res.on('data', function(chunk) {
+          apiResponse += chunk;
+      });
+
+      res.on('end', function() {
+          var o = JSON.parse(apiResponse);
+          self.setToken(o.access_token);
+          resolve(o);
+      });
+  }).on('error', function (e) {
+      reject('http-error:' + e);
+  });
+}
 
 
 
